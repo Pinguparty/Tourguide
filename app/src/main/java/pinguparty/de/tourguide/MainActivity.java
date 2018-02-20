@@ -17,6 +17,7 @@ import android.widget.Toast;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.mapbox.api.directions.v5.DirectionsCriteria;
 import com.mapbox.api.directions.v5.models.DirectionsResponse;
 import com.mapbox.api.directions.v5.models.DirectionsRoute;
 import com.mapbox.geojson.Point;
@@ -31,8 +32,10 @@ import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
 import com.mapbox.mapboxsdk.plugins.locationlayer.LocationLayerMode;
 import com.mapbox.mapboxsdk.plugins.locationlayer.LocationLayerPlugin;
+import com.mapbox.services.android.navigation.ui.v5.NavigationViewOptions;
 import com.mapbox.services.android.navigation.v5.navigation.MapboxNavigation;
 import com.mapbox.services.android.navigation.v5.navigation.NavigationRoute;
+import com.mapbox.services.android.navigation.ui.v5.NavigationLauncher;
 import com.mapbox.services.android.telemetry.location.LostLocationEngine;
 import com.mapbox.services.android.telemetry.location.LocationEngine;
 import com.mapbox.services.android.telemetry.location.LocationEngineListener;
@@ -40,6 +43,7 @@ import com.mapbox.services.android.telemetry.location.LocationEnginePriority;
 import com.mapbox.services.android.telemetry.permissions.PermissionsListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsManager;
 import com.mapbox.services.commons.models.Position;
+import com.mapbox.mapboxsdk.style.layers.Layer;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -56,24 +60,33 @@ import retrofit2.Retrofit;
 import pinguparty.de.tourguide.web.WebRepo;
 import retrofit2.converter.gson.GsonConverterFactory;
 
+import com.mapbox.services.android.navigation.ui.v5.route.NavigationMapRoute;
+
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.textField;
+
 public class MainActivity extends AppCompatActivity implements LocationEngineListener, PermissionsListener {
 
+    //initialvariablen
     private PermissionsManager permissionsManager;
     private LocationLayerPlugin locationPlugin;
     private LocationEngine locationEngine;
     private MapboxMap mapboxMap;
     private MapView mapView;
+
+    //Variablen für Navigation
     //private MapboxNavigation navigation = new MapboxNavigation(this, "pk.eyJ1Ijoia3JldHpzY2htYXJ2aW4iLCJhIjoiY2pjbHFwZnl4MGFmcjJ3bnZtcXV6M2M3cSJ9.oPwCChtV9rMOTKEB9FLp3Q");
-    private DirectionsRoute route;
+    private DirectionsRoute currentRoute;
+    private Point originPoint;
+    private Point destinationPoint;
+    private static final String TAG = "DirectionsActivity";
+    private NavigationMapRoute navigationMapRoute;
+    private Marker target;
 
-
-    private Button menuButton;
+    //UI-Variablen
+    private Button startNavButton;
     private Button activitySwitchButton;
     private FloatingActionButton commitPoiButton;
     private FloatingActionButton resetCameraButton;
-
-    private Marker target;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,6 +101,8 @@ public class MainActivity extends AppCompatActivity implements LocationEngineLis
             @SuppressLint("MissingPermission")
             @Override
             public void onMapReady(final MapboxMap mapboxMap) {
+                Layer mapText = mapboxMap.getLayer("country-label-lg");
+                mapText.setProperties(textField("{name_de}"));              //Deutsche Bezeichnungen auf der Karte
                 MainActivity.this.mapboxMap = mapboxMap;
                 enableLocationPlugin();
                 Intent intent = getIntent();
@@ -96,30 +111,49 @@ public class MainActivity extends AppCompatActivity implements LocationEngineLis
                 String name = intent.getStringExtra("Name");
                 String desc = intent.getStringExtra("Desc");
                 //Log.d("foobar","Intent hat funktioniert: Lat: " + lat + " Long: " + lng);
-                if(lat != 0 && lng != 0) {
-                    target = mapboxMap.addMarker(new MarkerOptions().position(new LatLng(lng,lat))
-                                                                    .title(name)
-                                                                    .snippet(desc));            //Lat/long Vertauscht... irgendwo aufm weg... ich glaube bei der Hardcoded Liste
-                    @SuppressLint("MissingPermission") LatLngBounds latLngBounds = new LatLngBounds.Builder()
+                if(lat != 0 && lng != 0 && name != null) {
+                    target = mapboxMap.addMarker(new MarkerOptions()
+                            .position(new LatLng(lng,lat))
+                            .title(name)
+                            .snippet(desc));            //Lat/long Vertauscht... irgendwo aufm weg... ich glaube bei der Hardcoded Liste
+                    @SuppressLint("MissingPermission")
+                    LatLngBounds latLngBounds = new LatLngBounds.Builder()
                                         .include(target.getPosition())
                                         .include(new LatLng(locationEngine.getLastLocation().getLatitude(),locationEngine.getLastLocation().getLongitude()))
                                         .build();
                     mapboxMap.animateCamera(CameraUpdateFactory.newLatLngBounds(latLngBounds,500),1000);
-                    //addNavigation(Position.fromLngLat(locationEngine.getLastLocation().getLongitude(),locationEngine.getLastLocation().getLatitude()),Position.fromLngLat(target.getPosition().getLongitude(),target.getPosition().getLatitude()));
-                    //if(route != null) {
-                    //   navigation.startNavigation(route);
-                    //}
+                    originPoint = (Point.fromLngLat(locationEngine.getLastLocation().getLongitude(),locationEngine.getLastLocation().getLatitude()));
+                    destinationPoint = (Point.fromLngLat(target.getPosition().getLongitude(),target.getPosition().getLatitude()));
+                    addNavigation(originPoint,destinationPoint);
                 }
 
-                menuButton = findViewById(R.id.menuButton);
-                menuButton.setOnClickListener( new View.OnClickListener(){
+                startNavButton = findViewById(R.id.startNavButton);         //TODO: failsafe einbauen
+                startNavButton.setOnClickListener( new View.OnClickListener(){
                     public void onClick(View v){
-                        if(target != null) {
+                         /*
+                         if(target != null) {
                             mapboxMap.removeMarker(target);
                             target = null;
                         }else{
                             target= mapboxMap.addMarker(new MarkerOptions().position(new LatLng(50.025230,8.176498)));
-                        }
+                        } */ //TEST
+
+                        Point ori =originPoint;
+                        Point des = destinationPoint;
+
+                        String awsPoolID = null;        //Mögliche Eingabe von Amazon Polly ID
+
+                        boolean simulate = true;
+
+                        NavigationViewOptions options = NavigationViewOptions.builder()
+                                .origin(ori)
+                                .destination(des)
+                                .awsPoolId(awsPoolID)
+                                .shouldSimulateRoute(simulate)
+                                .build();
+
+                        Log.d("foobar","ori: " + ori.latitude() + " " + ori.longitude() + "des: " + des.latitude() + des.longitude());
+                        NavigationLauncher.startNavigation(MainActivity.this,options);
                     }
                 });
 
@@ -171,31 +205,39 @@ public class MainActivity extends AppCompatActivity implements LocationEngineLis
         }
     }
 
-    private void addNavigation(Position origin, Position destination){
-        Position ori = origin;
-        Position dest = destination;
-
+    private void addNavigation(Point originPoint, Point destinationPoint){
         //navigation.setLocationEngine(locationEngine);
 
         NavigationRoute.builder()
                 .accessToken(Mapbox.getAccessToken())
-                .origin(Point.fromLngLat(ori.getLongitude(),ori.getLatitude()))
-                .destination(Point.fromLngLat(ori.getLongitude(),ori.getLatitude()))
+                .origin(originPoint)
+                .destination(destinationPoint)
+                .profile(DirectionsCriteria.PROFILE_WALKING)
                 .build()
                 .getRoute(new Callback<DirectionsResponse>() {
                     @Override
                     public void onResponse(Call<DirectionsResponse> call, Response<DirectionsResponse> response) {
-                        if(response.body() != null){
-                            if(!response.body().routes().isEmpty()){
-                                DirectionsRoute directionsRoute = response.body().routes().get(0);
-                                MainActivity.this.route = directionsRoute;
-                            }
+                        Log.d("foobar","Response Code: " + response.code());
+                        if(response.body() == null){
+                            Log.d("foobar", "No Routes Found (maybe User/AT)");
+                        } else if(response.body().routes().size() < 1) {
+                            Log.d("foobar", "No routes found");
+                            return;
                         }
+
+                        currentRoute = response.body().routes().get(0);
+
+                        if (navigationMapRoute != null){
+                            navigationMapRoute.removeRoute();
+                        } else {
+                            navigationMapRoute = new NavigationMapRoute(null, mapView,mapboxMap,R.style.NavigationMapRoute);
+                        }
+                        navigationMapRoute.addRoute(currentRoute);
                     }
 
                     @Override
                     public void onFailure(Call<DirectionsResponse> call, Throwable t) {
-
+                        Log.d("foobar", "ERROR: " + t.getMessage());
                     }
                 });
 
@@ -282,6 +324,9 @@ public class MainActivity extends AppCompatActivity implements LocationEngineLis
     @SuppressWarnings({"MissingPermission"})
     protected void onStart() {
         super.onStart();
+        if (locationEngine != null){
+            locationEngine.requestLocationUpdates();
+        }
         if (locationPlugin != null){
             locationPlugin.onStart();
         }
@@ -305,7 +350,7 @@ public class MainActivity extends AppCompatActivity implements LocationEngineLis
     protected void onStop() {
         super.onStop();
         if(locationEngine != null){
-            locationEngine.requestLocationUpdates();
+            locationEngine.removeLocationUpdates();
         }
         if (locationPlugin != null){
             locationPlugin.onStop();

@@ -10,7 +10,7 @@
     <string name="get_pos_button">Letzte Position</string>
     <string name="choose_pos_button">Wähle Position</string>
     <string name="commit_button">Absenden</string>
-    <string name="menu_button_name">Menü</string>
+    <string name="start_nav_button_name">Starte die Route</string>
     <string name="switch_button_name">Nahe POI</string>
     <string name="title_activity_poi_list">POIs in der Nähe</string>
     <string name="title_activity_commit_poi">POI hinzufügen</string>

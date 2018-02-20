@@ -13,8 +13,12 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.mapbox.services.android.telemetry.location.LocationEngine;
 import com.mapbox.services.commons.models.Position;
+
+import java.io.IOException;
 
 import pinguparty.de.tourguide.web.models.Poi;
 
@@ -65,15 +69,15 @@ public class CommitPoiActivity extends AppCompatActivity {
             }
         });
 
-        choosePosButton = findViewById(R.id.choosePosButton);
+        /*choosePosButton = findViewById(R.id.choosePosButton);
         choosePosButton.setOnClickListener( new View.OnClickListener(){
             @Override
             public void onClick(View view){
-                //TODO Choose Position Funktion
+                //Choose Position Funktion
                 Intent intent = new Intent(CommitPoiActivity.this, PoiChooserActivity.class);
                 startActivity(intent);
             }
-        });
+        }); */
 
         commitButton = findViewById(R.id.commitButton);
         commitButton.setOnClickListener( new View.OnClickListener(){
@@ -87,10 +91,11 @@ public class CommitPoiActivity extends AppCompatActivity {
                 newPoi.setPoi(nameEdit.getText().toString(),descEdit.getText().toString(), newpos);
 
                 //TODO POST Befehl für neuen POI hier einfügen!
-                //POST newPoi to Database
+                // createPoi(newPoi);
                 Log.d("foobar","Neuen POI angelegt: Name: " + newPoi.getName() + " Beschreibung: " + newPoi.getDesc() + " Lat: " + newPoi.getPositionLat() + " Long: " + newPoi.getPositionLong());
             }
         });
+
     }
 
 }

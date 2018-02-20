@@ -6,4 +6,5 @@
     <color name="buttonBackground">#a1a2a3</color>
     <color name="buttonForeground">#ffffff</color>
     <color name="textColor">#000000</color>
+    <color name="plainWhite">#ffffff</color>
 </resources>
